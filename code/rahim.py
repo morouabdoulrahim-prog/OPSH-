@@ -1,5 +1,7 @@
 import os
 import sys
+import readline
+import farid
 
 # Table des alias imposée par le sujet
 ALIAS = {
@@ -13,7 +15,23 @@ ALIAS = {
     "newfile": "touch"
 }
 
-BUILTINS = ["go", "quit", "say", "info", "past", "osinfo"]
+BUILTINS = ["go", "quit", "say", "info", "past", "osinfo", "export"]
+HISTORIQUE = []
+
+def configurer_autocompletion():
+    """Active la complétion automatique avec la touche Tab (Jalon 5)."""
+    def completer(texte, etat):
+        options = BUILTINS + list(ALIAS.keys()) + os.listdir(".")
+        correspondances = [opt for opt in options if opt.startswith(texte)]
+        return correspondances[etat] if etat < len(correspondances) else None
+
+    readline.set_completer(completer)
+    readline.parse_and_bind("tab: complete")
+
+def ajouter_historique(ligne):
+    """Enregistre chaque commande tapée pour le builtin 'past'."""
+    if ligne.strip():
+        HISTORIQUE.append(ligne.strip())
 
 def appliquer_alias(tokens):
     """Remplace le premier mot s'il fait partie des alias."""
@@ -47,15 +65,14 @@ def extraire_redirections(tokens):
 
     return cmd_propre, redir_in, redir_out, mode_append
 
-def est_builtin(commande):
-    return commande in BUILTINS
+def est_builtin(tokens):
+    return len(tokens) > 0 and tokens[0] in BUILTINS
 
 def executer_builtin(tokens, redir_out=None, mode_append=False):
     """Exécute les commandes internes de opsh."""
     cmd = tokens[0]
     args = tokens[1:]
 
-    # Gestion de la redirection de sortie pour les builtins (ex: say hello > f.txt)
     ancien_stdout = sys.stdout
     fichier_sortie = None
     if redir_out:
@@ -65,25 +82,50 @@ def executer_builtin(tokens, redir_out=None, mode_append=False):
 
     try:
         if cmd == "go":
-            # cd doit être un builtin car un processus enfant ne peut pas changer le dossier du parent
+            # cd doit être un builtin car un enfant ne peut pas changer le dossier du parent
             cible = args[0] if args else os.path.expanduser("~")
             os.chdir(cible)
+            farid.dernier_statut = 0
 
         elif cmd == "quit":
             sys.exit(0)
 
         elif cmd == "say":
             print(" ".join(args))
+            farid.dernier_statut = 0
 
         elif cmd == "osinfo":
             print("Systèmes d’Exploitation –- UIR/ESIN")
+            farid.dernier_statut = 0
 
-        elif cmd == "info":
-            print("Builtins disponibles : go, quit, say, info, past, osinfo")
-            print("Alias disponibles : list, path, show, copy, move, del, newdir, newfile")
+        elif cmd == "export":
+            if not args:
+                for cle, val in os.environ.items():
+                    print(f"{cle}={val}")
+            else:
+                for arg in args:
+                    if "=" in arg:
+                        cle, val = arg.split("=", 1)
+                        os.environ[cle] = val
+                    else:
+                        print("opsh: syntaxe export invalide (utilisez export VAR=VALEUR)")
+                        farid.dernier_statut = 1
+                        return
+            farid.dernier_statut = 0
 
         elif cmd == "past":
-            print("Historique à implémenter ici (Jalon 5)")
+            for index, entree in enumerate(HISTORIQUE, start=1):
+                print(f"{index}  {entree}")
+            farid.dernier_statut = 0
+
+        elif cmd == "info":
+            print("Builtins : go, quit, say, info, past, osinfo, export")
+            print("Alias    : list (ls), path (pwd), show (cat), copy (cp), move (mv), del (rm), newdir (mkdir), newfile (touch)")
+            farid.dernier_statut = 0
+
+    except Exception as e:
+        print(f"opsh: erreur {cmd} : {e}")
+        farid.dernier_statut = 1
 
     finally:
         if fichier_sortie:
